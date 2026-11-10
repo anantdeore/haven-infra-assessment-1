@@ -27,7 +27,43 @@ def check_plan(plan_path: str) -> int:
     Returns an exit code: 0 if every resource being created or updated has
     `landlord_account_id`, non-zero otherwise.
     """
-    raise NotImplementedError("Implement this.")
+    with open(plan_path, encoding="utf-8") as fh:
+        plan = json.load(fh)
+
+    REQUIRED_TAG = "landlord_account_id"
+    ACTIONABLE = {"create", "update"}
+
+    # Collect violations: resource addresses missing the required billing tag.
+    # Using `address` as the dedup key within a single run — Terraform guarantees
+    # each address is unique in a plan, so iterating resource_changes never
+    # produces the same address twice.  That is what gives this function its
+    # idempotency: the plan file is the sole source of truth, no external state
+    # is written or read between invocations, and each address appears at most
+    # once per run.
+    violations = []
+    seen = set()  # guard against a malformed plan that repeats an address
+    for resource in plan.get("resource_changes", []):
+        address = resource["address"]
+        if address in seen:
+            continue
+        seen.add(address)
+
+        actions = set(resource.get("change", {}).get("actions", []))
+        if not actions & ACTIONABLE:
+            continue
+
+        after = resource.get("change", {}).get("after") or {}
+        tags = after.get("tags") or {}
+        if REQUIRED_TAG not in tags:
+            violations.append(address)
+
+    if violations:
+        for addr in violations:
+            print(f"MISSING TAG '{REQUIRED_TAG}': {addr}")
+        return 1
+
+    print(f"All create/update resources carry '{REQUIRED_TAG}' — OK")
+    return 0
 
 
 if __name__ == "__main__":

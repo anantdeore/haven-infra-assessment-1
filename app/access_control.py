@@ -26,4 +26,14 @@ def can_access_screening_report(
     Return True if actor may view report, False otherwise. Fail closed — if anything needed to
     make this determination is missing (tenant not found, property not found), return False.
     """
-    raise NotImplementedError("Implement this.")
+    # Walk the chain: report -> tenant -> property -> landlord_account
+    # Fail closed on any missing link.
+    tenant = next((t for t in tenants if t.id == report.tenant_id), None)
+    if tenant is None:
+        return False
+
+    prop = next((p for p in properties if p.id == tenant.property_id), None)
+    if prop is None:
+        return False
+
+    return actor.landlord_account_id == prop.landlord_account_id
